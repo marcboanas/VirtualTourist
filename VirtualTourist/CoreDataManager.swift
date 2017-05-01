@@ -63,20 +63,24 @@ class CoreDataManager: NSObject {
     }
     
     private func addPhotosForPin(photosDictionary: [String: AnyObject], pin: Pin) {
-        
-        if let pages = photosDictionary[FlickrClient.Constants.FlickrResponseKeys.Pages] {
-            pin.pages = "\(pages)"
-        }
+
+        stack.context.perform({
+            if let pages = photosDictionary[FlickrClient.Constants.FlickrResponseKeys.Pages] {
+                pin.pages = "\(pages)"
+                self.saveModel()
+            }
+        })
         
         let photoArray = photosDictionary[FlickrClient.Constants.FlickrResponseKeys.Photo] as! [[String: AnyObject]]
         
         for photo in photoArray {
             let url = photo[FlickrClient.Constants.FlickrResponseKeys.MediumURL]
-            let photo = Photo(url: url as! String, context: stack.context)
-            photo.pin = pin
+            stack.context.performAndWait{() -> Void in
+                let photo = Photo(url: url as! String, context: self.stack.context)
+                photo.pin = pin
+                self.saveModel()
+            }
         }
-        
-        saveModel()
     }
     
     private func downloadPhotosForPin(pin: Pin) {
@@ -100,20 +104,26 @@ class CoreDataManager: NSObject {
         for photo in fc.fetchedObjects! {
             let p = photo as! Photo
             
-            if p.imageData == nil {
-            
-                let url = URL(string: p.url)
-                if let photoData = try? Data(contentsOf: url!) {
-                    p.imageData = photoData
+            stack.context.performAndWait({
+                if p.imageData == nil {
+                    
+                    let url = URL(string: p.url)
+                    if let photoData = try? Data(contentsOf: url!) {
+                        p.imageData = photoData
+                    }
+                    
                 }
-
-            }
+                
+                self.saveModel()
+            })
+            
         }
         
-        pin.isDownloading = false
-        
-        saveModel()
-        
+        stack.context.performAndWait {
+            pin.isDownloading = false
+            self.saveModel()
+        }
+
         NotificationCenter.default.post(name: Notification.Name(rawValue: "photosDidFinishDownloadingNotification"), object: nil, userInfo: ["pin": pin])
     }
     
@@ -184,6 +194,8 @@ class CoreDataManager: NSObject {
         for photo in photos {
             stack.context.delete(photo)
         }
+        
+        saveModel()
     }
     
     // MARK: Shared Instance
